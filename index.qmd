@@ -139,7 +139,7 @@ cost_mn <- scales::dollar(mean(sweeping$estimated_cost, na.rm = TRUE), accuracy 
 len_proj <- round(mean(sweeping$day_len))
 
 
-map_palette <- c("#008097", "#ED683F", "#EACA2D", "#5C2B1C", "#ED018C", "#185411")
+# map_palette <- c("#008097", "#ED683F", "#EACA2D", "#5C2B1C", "#ED018C", "#185411")
 
 ```
 
@@ -221,12 +221,16 @@ leaflet(data = df,
              ) %>%
   addProviderTiles(provider = "CartoDB.Positron") %>%
   addPolygons(
-    data = councils,
+    data = spending,
     fillColor = ~cpaltemplates::palette_cpal_main[color_id],
     fillOpacity = 0.15,
     stroke = FALSE,
     smoothFactor = 1,
-    options = pathOptions(clickable = F, interactive = T)
+    # options = pathOptions(clickable = F, interactive = T),
+    popup = ~paste0(
+      "<b>District ", DISTRICT, "</b><br/>",
+      scales::dollar(amount_paid_Totl), " spent out of committed ", scales::dollar(amount_paid_Totl + amount_left_Totl), " (", scales::percent(amount_paid_Totl/(amount_paid_Totl + amount_left_Totl)), ")<br/>"
+    )
   ) %>%
   addLabelOnlyMarkers(
     data = council_centers,
@@ -236,8 +240,9 @@ leaflet(data = df,
       textOnly = TRUE,
       style = list(
         "color" = "#333333",
-        "font-size" = "12px",
-        "font-family" = "arial"
+        "font-size" = "14px",
+        "font-family" = "arial",
+        "font-weight" = "bold"
         )
       )) %>%
   addCircleMarkers(
