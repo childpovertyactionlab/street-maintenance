@@ -1,0 +1,281 @@
+---
+pagetitle: "Street Maintenance Map"
+format: html
+---
+
+```{r setup, output = F, echo = F}
+
+library(tidycensus)
+library(sf)
+require(tidyverse)
+library(leaflet)
+library(traveltimeR)
+library(crosstalk)
+
+
+# dallas_co <- sf::read_sf("data/dallas_co.geojson")
+# dallas_co <- tigris::counties(state = "TX") %>%
+#   filter(NAME == "Dallas")
+# sf::write_sf(dallas_co, "data/dallas_co.geojson")
+
+councils <- sf::read_sf("data/councils_colors.geojson") %>%
+  st_transform(4269)
+
+council_centers <- councils %>%
+  st_difference(
+    sf::st_sfc(sf::st_polygon(list(matrix(c(
+      -96.6, 32.75,
+      -96.6, 33.1,
+      -96.3, 33.1,
+      -96.3, 32.75,
+      -96.6, 32.75
+    ), ncol = 2, byrow = TRUE))), crs = sf::st_crs(councils))
+  ) %>%
+  sf::st_point_on_surface() 
+
+bounds <- sf::st_bbox(councils)
+
+sweeping <- read_csv("data/street-sweeping.csv") %>%
+  janitor::clean_names() %>%
+  mutate(startD = as.Date(actual_start_date, format = "%m/%d/%Y"),
+         endD = as.Date(construct_complete, format = "%m/%d/%Y"),
+         estimated_cost_0 = ifelse(
+            is.na(estimated_cost),
+            0,
+            estimated_cost),
+         day_len = endD - startD
+         ) %>%
+  st_as_sf(coords = c("long", "lat"), crs = 4269)
+# sweeping <- read_csv("data/street-sweeping.csv") %>%
+#   mutate(address = paste(street_name_alt, "Dallas, TX", sep = ", ")) %>%
+#   tidygeocoder::geocode(address = address, method = "arcgis")
+# write_csv(sweeping, "data/street-sweeping.csv")
+
+
+# spending <- read_csv("data/Infrastructure Spending.csv") %>%
+#   janitor::clean_names() %>%
+#   filter(!grepl(",", district)) %>%
+#   filter(!grepl("Citywide", district)) %>%
+#   mutate(
+#     district = as.factor(as.numeric(district)),
+#     program_name = as.factor(program_name),
+#     amount_left = current_commit - amount_paid
+#   )
+# 
+# spending_paid <- spending %>%
+#   group_by(district, program_name) %>%
+#   summarize(
+#     amount_paid = sum(amount_paid)
+#   ) %>%
+#   bind_rows(
+#     spending %>%
+#       group_by(district) %>%
+#       summarize(
+#         amount_paid = sum(amount_paid)
+#       ) %>%
+#       mutate(
+#         program_name = "Total"
+#       )
+#   )
+# 
+# spending_left <- spending %>%
+#   group_by(district, program_name) %>%
+#   summarize(
+#     amount_left = sum(amount_left)
+#   ) %>%
+#   bind_rows(
+#     spending %>%
+#       group_by(district) %>%
+#       summarize(
+#         amount_left = sum(amount_left)
+#       ) %>%
+#       mutate(
+#         program_name = "Total"
+#       )
+#   )
+# 
+# spending_all0 <- full_join(spending_paid, spending_left) %>%
+#   mutate(program_name = abbreviate(program_name)) %>%
+#   pivot_wider(
+#     names_from = program_name,
+#     values_from = c(amount_paid, amount_left)
+#   ) %>%
+#   mutate_all(~replace(., is.na(.), 0)) %>%
+#   rename(DISTRICT = district)
+# 
+# spending_all <- spending_all0 %>%
+#   mutate(
+#     pct_spent = amount_paid_Totl / (amount_left_Totl + amount_paid_Totl),
+#     pct_paid_dal = amount_paid_Totl / sum(spending_all0$amount_paid_Totl),
+#     pct_left_dal = amount_left_Totl / sum(spending_all0$amount_left_Totl)
+#          ) %>%
+#   left_join(councils, by = "DISTRICT") %>% 
+#   st_as_sf() %>% 
+#   st_set_crs(4269)
+# 
+# write_csv(spending_all, "data/spending_wide.csv")
+# st_write(spending_all, "data/spending.geojson")
+
+spending <- st_read("data/spending.geojson")
+
+
+expanded_bounds <- as.vector(c(
+  xmin = bounds["xmin"] - 0.25, 
+  ymin = bounds["ymin"] - 0.25, 
+  xmax = bounds["xmax"] + 0.25, 
+  ymax = bounds["ymax"] + 0.25
+))
+
+
+shared_data <- SharedData$new(sweeping)
+
+min_date <- min(sweeping$startD) %>%
+  format("%m/%d/%y")
+max_date <- max(sweeping$endD) %>%
+  format("%m/%d/%y")
+
+cost_med <- scales::dollar(median(sweeping$estimated_cost, na.rm = TRUE), accuracy = 1)
+cost_mn <- scales::dollar(mean(sweeping$estimated_cost, na.rm = TRUE), accuracy = 1)
+len_proj <- round(mean(sweeping$day_len))
+
+
+map_palette <- c("#008097", "#ED683F", "#EACA2D", "#5C2B1C", "#ED018C", "#185411")
+
+```
+
+
+```{=html}
+<div class="column-screen-inset">
+<div class="mainboxbox">
+<div class="mainbox">
+
+<div class="card">
+
+<div class="cardbox">
+
+<div class="left-card-col">
+
+  <div class="card-side" style="width: 94%;">
+  
+    <div class="card-text">
+  
+      <h4 style="font-size: 18px!important;">There were <b>`r nrow(sweeping)`</b> street maintenance projects in the city of Dallas between `r min_date` and `r max_date`.</h4>
+      
+      <hr/>
+      
+      <div class="tp">
+          <i class="bi bi-piggy-bank-fill tp-icon"></i>
+          <div class="tp-text">
+            Median cost of `r cost_med`<br>
+            Mean cost of `r cost_mn`
+          </div>
+      </div>
+  
+      <div class="tp">
+          <i class="bi bi-calendar-range tp-icon"></i>
+          <div class="tp-text">
+            Average project length of `r len_proj` days
+          </div>
+      </div>
+  
+      <div class="tp">
+          <i class="tp-icon"></i>
+          <div class="tp-text">Your third talking point here...</div>
+      </div>
+      
+    </div>
+    
+    <div class="slider-box">
+
+```
+
+
+```{r slider}
+
+filter_slider("Estimated Cost", "Filter map by estimated cost:", shared_data, ~estimated_cost_0, width = "95%", pre = "$", min = 0, max = 1000000, ticks = FALSE, step = 500)
+
+```
+
+
+```{=html}
+    </div>
+  </div>
+</div>
+
+<div class="right-card-col">
+```
+
+
+```{r map}
+
+leaflet(data = df, 
+             # height = "90vh", 
+             # width = "100%",
+             elementId = "treatment_map",
+             options = leafletOptions(
+               zoomSnap = 0.5,
+               zoomDelta = 0.5,
+               minZoom = 9.5,
+               wheelPxPerZoomLevel = 120
+               )
+             ) %>%
+  addProviderTiles(provider = "CartoDB.Positron") %>%
+  addPolygons(
+    data = councils,
+    fillColor = ~cpaltemplates::palette_cpal_main[color_id],
+    fillOpacity = 0.15,
+    stroke = FALSE,
+    smoothFactor = 1,
+    options = pathOptions(clickable = F, interactive = T)
+  ) %>%
+  addLabelOnlyMarkers(
+    data = council_centers,
+    label = ~COUNCIL,
+    labelOptions = labelOptions(
+      noHide = TRUE, 
+      textOnly = TRUE,
+      style = list(
+        "color" = "#333333",
+        "font-size" = "12px",
+        "font-family" = "arial"
+        )
+      )) %>%
+  addCircleMarkers(
+    data = shared_data,
+    radius = 4,
+    stroke = FALSE,
+    color = ~ifelse(treatment_category == "Maintenance", "#ed683f", "#379145"),
+    fillOpacity = 0.7,
+    popup = ~paste0(
+        "<b>", action_name, "</b> finished on ", construct_complete, "<br/>",
+        "<i>", description, "</i><br/>",
+        "&nbsp;&nbsp;&nbsp;&nbsp;Manager: ", manager_name, "<br/>",
+        "&nbsp;&nbsp;&nbsp;&nbsp;Estimated cost: ", scales::dollar(estimated_cost), "<br/>",        
+        "&nbsp;&nbsp;&nbsp;&nbsp;Project date: ", actual_start_date, "&#8211;", construct_complete
+      )
+  ) %>%
+  addLegend(
+    data = shared_data,
+    "topright",
+    pal = colorFactor(palette = c("Maintenance" = "#ed683f", "OtherCategory" = "#379145"), domain = shared_data$treatment_category),
+    values = ~treatment_category,
+    title = "Treatment",
+    opacity = 0.7
+  ) %>%
+  setMaxBounds(expanded_bounds[1], expanded_bounds[2], expanded_bounds[3], expanded_bounds[4])
+
+```
+
+
+```{=html}
+</div>
+
+</div>
+
+</div>
+
+
+</div>
+</div>
+</div>
+```
