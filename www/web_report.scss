@@ -596,6 +596,24 @@ h6 {
     font-size: 28px;
 }
 
+.irs-bar {
+  border-top: $gray-900!important;
+  border-bottom: $gray-900!important;
+  background: $gray-900!important;
+}
+
+.control-label {
+  font-size: 14px!important;
+}
+
+.irs-to, .irs-from {
+  background-color: $gray-900!important;
+}
+
+.irs-line {
+  background-color: $gray-000!important;
+}
+
 /*.info.show-description::after {
     display: inline;
 }*/
